@@ -489,3 +489,44 @@ def get_model():
     model.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.005, decay=0.001), metrics=['acc'])
 
     return model
+
+
+warnings.filterwarnings('ignore')
+sample_model = get_model()
+
+sample_model.summary()
+
+SVG(model_to_dot(sample_model).create(prog='dot', format='svg'))
+
+warnings.filterwarnings('ignore')
+
+splits = list(KFold(n_splits=5).split(X_train, y_train))
+
+oof_preds = np.zeros((X_train.shape[0]))
+test_preds = np.zeros((X_test.shape[0]))
+
+for fold in [0, 1, 2, 3, 4]:
+    K.clear_session()
+    tr_ind, val_ind = splits[fold]
+
+    ckpt = ModelCheckpoint(f'gru_{fold}.hdf5', save_best_only=True)
+    es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=3)
+    model = get_model()
+
+    model.fit(X_train[tr_ind],
+              y_train[tr_ind] > 0.5,
+              batch_size=BATCH_SIZE,
+              epochs=NUM_EPOCHS,
+              validation_data=(X_train[val_ind], y_train[val_ind] > 0.5),
+              callbacks=[es, ckpt])
+
+    oof_preds[val_ind] += model.predict(X_train[val_ind])[:, 0]
+    test_preds += model.predict(X_test)[:, 0]
+
+test_preds /= 5
+
+submission = pd.read_csv('../input/jigsaw-unintended-bias-in-toxicity-classification/sample_submission.csv',
+                         index_col='id')
+submission['prediction'] = test_preds
+submission.reset_index(drop=False, inplace=True)
+submission.head()

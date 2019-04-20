@@ -11,15 +11,18 @@
 
 import pandas as pd
 import numpy as np
+import gc
 import time
 import logging
 from keras_preprocessing.text import Tokenizer
-
+from keras_preprocessing.sequence import pad_sequences
 
 EMB_PATHS = [
     '../input/fasttext-crawl-300d-2m/crawl-300d-2M.vec',
     '../input/glove840b300dtxt/glove.840B.300d.txt'
 ]
+EMB_SIZE = 300
+MAX_LEN = 220
 
 
 def get_logger():
@@ -64,9 +67,23 @@ test['comment_text'] = test['comment_text'].apply(lambda x: clean_special_chars(
 logger.info('Fitting tokenizer')
 tokenizer = Tokenizer()
 tokenizer.fit_on_texts(list(train['comment_text']) + list(test['comment_text']))
+X_train = tokenizer.texts_to_sequences(list(train['comment_text']))
+X_test = tokenizer.texts_to_sequences(list(test['comment_text']))
+X_train = pad_sequences(X_train, maxlen=MAX_LEN)
+X_test = pad_sequences(X_test, maxlen=MAX_LEN)
+
 
 def get_coefs(word, *arr):
     return word, np.asarray(arr, dtype='float32')
 
-def build_embedding_matrix(embedding_path,word_index):
+
+def build_embedding_matrix(embedding_path, word_index):
     embedding_index = dict(get_coefs(*o.strip().split(" ")) for o in open(embedding_path))
+    embedding_matrix = np.zeros((len(word_index) + 1, EMB_SIZE))
+    for word, i in word_index.items():
+        embedding_vector = embedding_index.get(word)
+        if embedding_vector is not None:
+            embedding_matrix[i] = embedding_vector
+    del embedding_index
+    gc.collect()
+    return embedding_matrix

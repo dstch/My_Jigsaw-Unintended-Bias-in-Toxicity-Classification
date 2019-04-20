@@ -16,6 +16,14 @@ import time
 import logging
 from keras_preprocessing.text import Tokenizer
 from keras_preprocessing.sequence import pad_sequences
+from tensorflow.contrib.keras.api.keras.layers import Input, Dense, Embedding, SpatialDropout1D, Dropout, add, \
+    concatenate
+from tensorflow.contrib.keras.api.keras.layers import CuDNNLSTM, Bidirectional, GlobalMaxPooling1D, \
+    GlobalAveragePooling1D
+from tensorflow.contrib.keras.api.keras.models import Model
+from tensorflow.contrib.keras.api.keras.losses import binary_crossentropy
+from tensorflow.contrib.keras.api.keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 
 EMB_PATHS = [
     '../input/fasttext-crawl-300d-2m/crawl-300d-2M.vec',
@@ -23,6 +31,10 @@ EMB_PATHS = [
 ]
 EMB_SIZE = 300
 MAX_LEN = 220
+LSTM_UNITS = 128
+DENSE_HIDDEN_UNITS = 512
+FOLD_NUM = 5
+OOF_NAME = 'predicted_target'
 
 
 def get_logger():
@@ -39,18 +51,6 @@ def get_logger():
 
 logger = get_logger()
 
-logger.info('Load data')
-train = pd.read_csv('../input/jigsaw-unintended-bias-in-toxicity-classification/train.csv')
-test = pd.read_csv('../input/jigsaw-unintended-bias-in-toxicity-classification/test.csv')
-sub = pd.read_csv('../input/jigsaw-unintended-bias-in-toxicity-classification/sample_submission.csv')
-
-train['comment_text'] = train['comment_text'].astype(str)
-test['comment_text'] = test['comment_text'].astype(str)
-
-# adding preprocessing from this kernel: https://www.kaggle.com/taindow/simple-cudnngru-python-keras
-punct_mapping = {"_": " ", "`": " "}
-punct = "/-'?!.,#$%\'()*+-/:;<=>@[\\]^_`{|}~" + '""“”’' + '∞θ÷α•à−β∅³π‘₹´°£€\×™√²—–&'
-
 
 def clean_special_chars(text, punct, mapping):
     for p in mapping:
@@ -60,17 +60,37 @@ def clean_special_chars(text, punct, mapping):
     return text
 
 
-logger.info('Clean data')
-train['comment_text'] = train['comment_text'].apply(lambda x: clean_special_chars(x, punct, punct_mapping))
-test['comment_text'] = test['comment_text'].apply(lambda x: clean_special_chars(x, punct, punct_mapping))
+def load_data():
+    logger.info('Load data')
+    train = pd.read_csv('../input/jigsaw-unintended-bias-in-toxicity-classification/train.csv')
+    test = pd.read_csv('../input/jigsaw-unintended-bias-in-toxicity-classification/test.csv')
+    sub = pd.read_csv('../input/jigsaw-unintended-bias-in-toxicity-classification/sample_submission.csv')
 
-logger.info('Fitting tokenizer')
-tokenizer = Tokenizer()
-tokenizer.fit_on_texts(list(train['comment_text']) + list(test['comment_text']))
-X_train = tokenizer.texts_to_sequences(list(train['comment_text']))
-X_test = tokenizer.texts_to_sequences(list(test['comment_text']))
-X_train = pad_sequences(X_train, maxlen=MAX_LEN)
-X_test = pad_sequences(X_test, maxlen=MAX_LEN)
+    train['comment_text'] = train['comment_text'].astype(str)
+    test['comment_text'] = test['comment_text'].astype(str)
+
+    # adding preprocessing from this kernel: https://www.kaggle.com/taindow/simple-cudnngru-python-keras
+    punct_mapping = {"_": " ", "`": " "}
+    punct = "/-'?!.,#$%\'()*+-/:;<=>@[\\]^_`{|}~" + '""“”’' + '∞θ÷α•à−β∅³π‘₹´°£€\×™√²—–&'
+
+    logger.info('Clean data')
+    train['comment_text'] = train['comment_text'].apply(lambda x: clean_special_chars(x, punct, punct_mapping))
+    test['comment_text'] = test['comment_text'].apply(lambda x: clean_special_chars(x, punct, punct_mapping))
+
+    y = np.where(train['target'] >= 0.5, True, False) * 1
+    return train, test, sub, y
+
+
+def run_tokenizer(train, test):
+    logger.info('Fitting tokenizer')
+    tokenizer = Tokenizer()
+    tokenizer.fit_on_texts(list(train['comment_text']) + list(test['comment_text']))
+    # X_train = tokenizer.texts_to_sequences(list(train['comment_text']))
+    # X_test = tokenizer.texts_to_sequences(list(test['comment_text']))
+    # X_train = pad_sequences(X_train, maxlen=MAX_LEN)
+    # X_test = pad_sequences(X_test, maxlen=MAX_LEN)
+    # word_index = tokenizer.word_index
+    return tokenizer  # X_train, X_test, word_index
 
 
 def get_coefs(word, *arr):
@@ -87,3 +107,70 @@ def build_embedding_matrix(embedding_path, word_index):
     del embedding_index
     gc.collect()
     return embedding_matrix
+
+
+def custom_loss(y_true, y_pred):
+    return binary_crossentropy(K.reshape(y_true[:, 0], (-1, 1)), y_pred) * y_true[:, 1]
+
+
+def build_model(embedding_matrix, num_aux_targets, loss_weight):
+    '''
+    credits go to: https://www.kaggle.com/thousandvoices/simple-lstm/
+    '''
+    words = Input(shape=(MAX_LEN,))
+    x = Embedding(*embedding_matrix.shape, weights=[embedding_matrix], trainable=False)(words)
+    x = SpatialDropout1D(0.3)(x)
+    x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
+    x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
+
+    hidden = concatenate([GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x), ])
+    hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
+    hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
+    result = Dense(1, activation='sigmoid')(hidden)
+    aux_result = Dense(num_aux_targets, activation='sigmoid')(hidden)
+
+    model = Model(inputs=words, outputs=[result, aux_result])
+    model.compile(loss=[custom_loss, 'binary_crossentropy'], loss_weights=[loss_weight, 1.0], optimizer='adam')
+
+    return model
+
+
+def train_model(X, X_test, y, tokenizer):
+    oof = np.zeros((len(X), 1))
+    prediction = np.zeros((len(X_test), 1))
+    scores = []
+    test_tokenized = tokenizer.texts_to_sequences(test['comment_text'])
+    X_test = pad_sequences(test_tokenized, maxlen=MAX_LEN)
+    folds = StratifiedKFold(n_splits=FOLD_NUM, shuffle=True, random_state=11)
+    for fold_n, (train_index, valid_index) in enumerate(folds.split(X, y)):
+        print('Fold', fold_n, 'started at', time.ctime())
+        X_train, X_valid = X.iloc[train_index], X.iloc[valid_index]
+        y_train, y_valid = y.iloc[train_index], y.iloc[valid_index]
+        valid_df = X_valid.copy()
+
+        train_tokenized = tokenizer.texts_to_sequences(X_train['comment_text'])
+        valid_tokenized = tokenizer.texts_to_sequences(X_valid['comment_text'])
+
+        X_train = pad_sequences(train_tokenized, maxlen=MAX_LEN)
+        X_valid = pad_sequences(valid_tokenized, maxlen=MAX_LEN)
+
+        model = build_model(X_train, y_train, X_valid)
+        pred_valid = model.predict(X_valid)
+        oof[valid_index] = pred_valid
+        valid_df[OOF_NAME] = pred_valid
+
+        bias_metrics_df = compute_bias_metrics_for_model(valid_df, identity_columns, OOF_NAME, 'target')
+        scores.append(get_final_metric(bias_metrics_df, calculate_overall_auc(valid_df, OOF_NAME)))
+
+        prediction += model.predict(X_test, batch_size=1024, verbose=1)
+
+    prediction /= FOLD_NUM
+
+    # print('CV mean score: {0:.4f}, std: {1:.4f}.'.format(np.mean(scores), np.std(scores)))
+    return oof, prediction, scores
+
+
+if __name__ == '__main__':
+    train, test, sub, y = load_data()
+    X_train, X_test, word_index = run_tokenizer(train, test)
+    embedding_matrix = build_embedding_matrix(EMB_PATHS, word_index)

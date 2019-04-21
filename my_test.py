@@ -18,7 +18,8 @@ from keras_preprocessing.text import Tokenizer
 from keras_preprocessing.sequence import pad_sequences
 from tensorflow.contrib.keras.api.keras.layers import Input, Dense, Embedding, SpatialDropout1D, Dropout, add, \
     concatenate
-from tensorflow.contrib.keras.api.keras.layers import CuDNNLSTM, Bidirectional, GlobalMaxPooling1D, \
+from keras.layers import CuDNNLSTM
+from tensorflow.contrib.keras.api.keras.layers import Bidirectional, GlobalMaxPooling1D, \
     GlobalAveragePooling1D
 from tensorflow.contrib.keras.api.keras.models import Model
 from tensorflow.contrib.keras.api.keras.losses import binary_crossentropy
@@ -35,6 +36,8 @@ LSTM_UNITS = 128
 DENSE_HIDDEN_UNITS = 512
 FOLD_NUM = 5
 OOF_NAME = 'predicted_target'
+BATCH_SIZE = 128
+PATIENCE = 3
 
 
 def get_logger():
@@ -113,10 +116,12 @@ def custom_loss(y_true, y_pred):
     return binary_crossentropy(K.reshape(y_true[:, 0], (-1, 1)), y_pred) * y_true[:, 1]
 
 
-def build_model(embedding_matrix, num_aux_targets, loss_weight):
+def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
     '''
     credits go to: https://www.kaggle.com/thousandvoices/simple-lstm/
     '''
+    early_stop = EarlyStopping(monitor="val_loss", mode="min", patience=PATIENCE)
+
     words = Input(shape=(MAX_LEN,))
     x = Embedding(*embedding_matrix.shape, weights=[embedding_matrix], trainable=False)(words)
     x = SpatialDropout1D(0.3)(x)
@@ -127,15 +132,20 @@ def build_model(embedding_matrix, num_aux_targets, loss_weight):
     hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
     hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
     result = Dense(1, activation='sigmoid')(hidden)
-    aux_result = Dense(num_aux_targets, activation='sigmoid')(hidden)
 
-    model = Model(inputs=words, outputs=[result, aux_result])
-    model.compile(loss=[custom_loss, 'binary_crossentropy'], loss_weights=[loss_weight, 1.0], optimizer='adam')
+    model = Model(inputs=words, outputs=result)
+    model.compile(loss=[custom_loss, 'binary_crossentropy'], optimizer='adam', metrics=["accuracy"])
+    model.fit(X_train, y_train, batch_size=BATCH_SIZE, epochs=3, validation_data=(X_valid, y_valid),
+              verbose=2, callbacks=[early_stop])
+    # aux_result = Dense(num_aux_targets, activation='sigmoid')(hidden)
+    #
+    # model = Model(inputs=words, outputs=[result, aux_result])
+    # model.compile(loss=[custom_loss, 'binary_crossentropy'], loss_weights=[loss_weight, 1.0], optimizer='adam')
 
     return model
 
 
-def train_model(X, X_test, y, tokenizer):
+def train_model(X, X_test, y, tokenizer, embedding_matrix):
     oof = np.zeros((len(X), 1))
     prediction = np.zeros((len(X_test), 1))
     scores = []
@@ -154,23 +164,27 @@ def train_model(X, X_test, y, tokenizer):
         X_train = pad_sequences(train_tokenized, maxlen=MAX_LEN)
         X_valid = pad_sequences(valid_tokenized, maxlen=MAX_LEN)
 
-        model = build_model(X_train, y_train, X_valid)
+        model = build_model(embedding_matrix, X_train, y_train, X_valid, y_valid)
         pred_valid = model.predict(X_valid)
         oof[valid_index] = pred_valid
         valid_df[OOF_NAME] = pred_valid
 
-        bias_metrics_df = compute_bias_metrics_for_model(valid_df, identity_columns, OOF_NAME, 'target')
-        scores.append(get_final_metric(bias_metrics_df, calculate_overall_auc(valid_df, OOF_NAME)))
+        # bias_metrics_df = compute_bias_metrics_for_model(valid_df, identity_columns, OOF_NAME, 'target')
+        # scores.append(get_final_metric(bias_metrics_df, calculate_overall_auc(valid_df, OOF_NAME)))
 
         prediction += model.predict(X_test, batch_size=1024, verbose=1)
 
     prediction /= FOLD_NUM
 
     # print('CV mean score: {0:.4f}, std: {1:.4f}.'.format(np.mean(scores), np.std(scores)))
-    return oof, prediction, scores
+    return prediction
 
 
 if __name__ == '__main__':
     train, test, sub, y = load_data()
-    X_train, X_test, word_index = run_tokenizer(train, test)
-    embedding_matrix = build_embedding_matrix(EMB_PATHS, word_index)
+    tokenizer = run_tokenizer(train, test)
+    embedding_matrix = np.concatenate(
+        [build_embedding_matrix(f, tokenizer.word_index) for f in EMB_PATHS], axis=-1)
+    prediction = train_model(train, test, y, tokenizer, embedding_matrix)
+    sub['prediction'] = prediction
+    sub.to_csv('submission.csv', index=False)

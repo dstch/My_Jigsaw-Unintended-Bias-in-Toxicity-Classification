@@ -80,8 +80,8 @@ def load_data():
     train['comment_text'] = train['comment_text'].apply(lambda x: clean_special_chars(x, punct, punct_mapping))
     test['comment_text'] = test['comment_text'].apply(lambda x: clean_special_chars(x, punct, punct_mapping))
 
-    y = np.where(train['target'] >= 0.5, True, False) * 1
-    return train, test, sub, y
+    train['target'] = np.where(train['target'] >= 0.5, True, False)
+    return train, test, sub
 
 
 def run_tokenizer(train, test):
@@ -181,10 +181,10 @@ def train_model(X, X_test, y, tokenizer, embedding_matrix):
 
 
 if __name__ == '__main__':
-    train, test, sub, y = load_data()
+    train, test, sub = load_data()
     tokenizer = run_tokenizer(train, test)
     embedding_matrix = np.concatenate(
         [build_embedding_matrix(f, tokenizer.word_index) for f in EMB_PATHS], axis=-1)
-    prediction = train_model(train, test, y, tokenizer, embedding_matrix)
+    prediction = train_model(train, test, train['target'], tokenizer, embedding_matrix)
     sub['prediction'] = prediction
     sub.to_csv('submission.csv', index=False)

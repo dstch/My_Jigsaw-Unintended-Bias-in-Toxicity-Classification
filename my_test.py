@@ -16,7 +16,7 @@ import time
 import logging
 from keras_preprocessing.text import Tokenizer
 from keras_preprocessing.sequence import pad_sequences
-from tensorflow.contrib.keras.api.keras.layers import Input, Dense, Embedding, SpatialDropout1D, Dropout, add, \
+from keras.layers import Input, Dense, Embedding, SpatialDropout1D, Dropout, add, \
     concatenate
 from keras.layers import CuDNNLSTM
 from tensorflow.contrib.keras.api.keras.layers import Bidirectional, GlobalMaxPooling1D, \
@@ -25,6 +25,7 @@ from tensorflow.contrib.keras.api.keras.models import Model
 from tensorflow.contrib.keras.api.keras.losses import binary_crossentropy
 from tensorflow.contrib.keras.api.keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from keras import backend as K
 
 EMB_PATHS = [
     '../input/fasttext-crawl-300d-2m/crawl-300d-2M.vec',
@@ -134,7 +135,9 @@ def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
     result = Dense(1, activation='sigmoid')(hidden)
 
     model = Model(inputs=words, outputs=result)
-    model.compile(loss=[custom_loss, 'binary_crossentropy'], optimizer='adam', metrics=["accuracy"])
+    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=["accuracy"])
+    # loss如果是列表，则模型的output需要是对应的列表
+    # model.compile(loss=[custom_loss, 'binary_crossentropy'], optimizer='adam', metrics=["accuracy"])
     model.fit(X_train, y_train, batch_size=BATCH_SIZE, epochs=3, validation_data=(X_valid, y_valid),
               verbose=2, callbacks=[early_stop])
     # aux_result = Dense(num_aux_targets, activation='sigmoid')(hidden)

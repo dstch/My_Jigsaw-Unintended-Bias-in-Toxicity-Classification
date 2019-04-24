@@ -92,7 +92,7 @@ def build_embedding_matrix(word_index, path):
         except KeyError:
             pass
         except:
-            embedding_matrix[i] = embeddings_index["unknown"]
+            embedding_matrix[i] = embedding_index["unknown"]
 
     del embedding_index
     gc.collect()

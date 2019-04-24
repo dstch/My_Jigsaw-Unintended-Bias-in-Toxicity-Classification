@@ -26,6 +26,7 @@ from tensorflow.contrib.keras.api.keras.losses import binary_crossentropy
 from tensorflow.contrib.keras.api.keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from keras import backend as K
+import lightgbm as lgb
 
 EMB_PATHS = [
     '../input/fasttext-crawl-300d-2m/crawl-300d-2M.vec',
@@ -195,4 +196,15 @@ if __name__ == '__main__':
 ['id        ', 'target    ', 'comment_text', 'severe_toxicity', 'obscene   ', 'identity_attack', 'insult    ',
 'threat    ', 'created_date', 'publication_id', 'article_id', 'rating    ', 'funny     ', 'wow       ', 'sad       ',
 'likes     ', 'disagree  ', 'sexual_explicit', 'identity_annotator_count', 'toxicity_annotator_count']
+"""
+"""
+print("LGB test")
+clf = lgb.LGBMClassifier(
+        boosting_type=‘gbdt‘, num_leaves=55, reg_alpha=0.0, reg_lambda=1,
+        max_depth=15, n_estimators=6000, objective=‘binary‘,
+        subsample=0.8, colsample_bytree=0.8, subsample_freq=1,
+        learning_rate=0.06, min_child_weight=1, random_state=20, n_jobs=4
+    )
+clf.fit(X_train, y_train)
+pre=clf.predict(testdata)
 """

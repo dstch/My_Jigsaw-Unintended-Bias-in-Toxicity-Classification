@@ -37,7 +37,7 @@ LSTM_UNITS = 128
 DENSE_HIDDEN_UNITS = 512
 FOLD_NUM = 5
 OOF_NAME = 'predicted_target'
-BATCH_SIZE = 128
+BATCH_SIZE = 512
 PATIENCE = 3
 
 
@@ -139,7 +139,7 @@ def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
     # loss如果是列表，则模型的output需要是对应的列表
     # model.compile(loss=[custom_loss, 'binary_crossentropy'], optimizer='adam', metrics=["accuracy"])
     model.fit(X_train, y_train, batch_size=BATCH_SIZE, epochs=3, validation_data=(X_valid, y_valid),
-              verbose=2, callbacks=[early_stop])
+              verbose=1, callbacks=[early_stop])
     # aux_result = Dense(num_aux_targets, activation='sigmoid')(hidden)
     #
     # model = Model(inputs=words, outputs=[result, aux_result])

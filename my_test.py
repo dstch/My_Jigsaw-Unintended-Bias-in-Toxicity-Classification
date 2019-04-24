@@ -191,3 +191,8 @@ if __name__ == '__main__':
     prediction = train_model(train, test, train['target'], tokenizer, embedding_matrix)
     sub['prediction'] = prediction
     sub.to_csv('submission.csv', index=False)
+"""
+['id        ', 'target    ', 'comment_text', 'severe_toxicity', 'obscene   ', 'identity_attack', 'insult    ',
+'threat    ', 'created_date', 'publication_id', 'article_id', 'rating    ', 'funny     ', 'wow       ', 'sad       ',
+'likes     ', 'disagree  ', 'sexual_explicit', 'identity_annotator_count', 'toxicity_annotator_count']
+"""

@@ -17,7 +17,7 @@ import logging
 from keras_preprocessing.text import Tokenizer
 from keras_preprocessing.sequence import pad_sequences
 from keras.layers import Input, Dense, Embedding, SpatialDropout1D, Dropout, add, \
-    concatenate
+    concatenate, Layer, initializers
 from keras.layers import CuDNNLSTM
 from tensorflow.contrib.keras.api.keras.layers import Bidirectional, GlobalMaxPooling1D, \
     GlobalAveragePooling1D
@@ -118,6 +118,34 @@ def custom_loss(y_true, y_pred):
     return binary_crossentropy(K.reshape(y_true[:, 0], (-1, 1)), y_pred) * y_true[:, 1]
 
 
+# Attention GRU network
+class AttLayer(Layer):
+    def __init__(self, **kwargs):
+        self.init = initializers.get('normal')
+        # self.input_spec = [InputSpec(ndim=3)]
+        super(AttLayer, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        assert len(input_shape) == 3
+        # self.W = self.init((input_shape[-1],1))
+        self.W = self.init((input_shape[-1],))
+        # self.input_spec = [InputSpec(shape=input_shape)]
+        self.trainable_weights = [self.W]
+        super(AttLayer, self).build(input_shape)  # be sure you call this somewhere!
+
+    def call(self, x, mask=None):
+        eij = K.tanh(K.dot(x, self.W))
+
+        ai = K.exp(eij)
+        weights = ai / K.sum(ai, axis=1).dimshuffle(0, 'x')
+
+        weighted_input = x * weights.dimshuffle(0, 1, 'x')
+        return weighted_input.sum(axis=1)
+
+    def get_output_shape_for(self, input_shape):
+        return (input_shape[0], input_shape[-1])
+
+
 def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
     '''
     credits go to: https://www.kaggle.com/thousandvoices/simple-lstm/
@@ -129,6 +157,8 @@ def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
     x = SpatialDropout1D(0.3)(x)
     x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
     x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
+
+    att = AttLayer()(x)
 
     hidden = concatenate([GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x), ])
     hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
@@ -182,6 +212,11 @@ def train_model(X, X_test, y, tokenizer, embedding_matrix):
 
     # print('CV mean score: {0:.4f}, std: {1:.4f}.'.format(np.mean(scores), np.std(scores)))
     return prediction
+
+
+def lgb_model(train):
+    features = ['severe_toxicity', 'obscene', 'identity_attack', 'insult', 'threat', 'rating', 'funny', 'wow', 'sad',
+                'likes', 'disagree', 'sexual_explicit', 'identity_annotator_count', 'toxicity_annotator_count']
 
 
 if __name__ == '__main__':

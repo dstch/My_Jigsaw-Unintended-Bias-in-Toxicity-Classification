@@ -120,13 +120,16 @@ def custom_loss(y_true, y_pred):
 
 # Attention GRU network
 class AttLayer(Layer):
-    def __init__(self, **kwargs):
+    def __init__(self, step_dim, **kwargs):
+        self.step_dim = step_dim
+        # initializers：初始化方法，normal是初始化采用的算法
         self.init = initializers.get('normal')
         # self.input_spec = [InputSpec(ndim=3)]
-        super(AttLayer, self).__init__(**kwargs)
+        super(AttLayer, self).__init__(**kwargs)  # 固定写法
 
     def build(self, input_shape):
         assert len(input_shape) == 3
+        self.features_dim = input_shape[-1]
         # self.W = self.init((input_shape[-1],1))
         self.W = self.init((input_shape[-1],))
         # self.input_spec = [InputSpec(shape=input_shape)]
@@ -134,13 +137,25 @@ class AttLayer(Layer):
         super(AttLayer, self).build(input_shape)  # be sure you call this somewhere!
 
     def call(self, x, mask=None):
-        eij = K.tanh(K.dot(x, self.W))
+        # eij = K.tanh(K.dot(x, self.W))
+        features_dim = self.features_dim
+        step_dim = self.step_dim
 
-        ai = K.exp(eij)
-        weights = ai / K.sum(ai, axis=1).dimshuffle(0, 'x')
+        eij = K.reshape(K.dot(K.reshape(x, (-1, features_dim)),
+                              K.reshape(self.W, (features_dim, 1))), (-1, step_dim))
+        eij = K.tanh(eij)
+        a = K.exp(eij)
+        if mask is not None:
+            a *= K.cast(mask, K.floatx())
+        a /= K.cast(K.sum(a, axis=1, keepdims=True) + K.epsilon(), K.floatx())
 
-        weighted_input = x * weights.dimshuffle(0, 1, 'x')
-        return weighted_input.sum(axis=1)
+        a = K.expand_dims(a)
+        weighted_input = x * a
+        return K.sum(weighted_input, axis=1)
+        # weights = ai / K.sum(ai, axis=1).dimshuffle(0, 'x')
+        #
+        # weighted_input = x * weights.dimshuffle(0, 1, 'x')
+        # return weighted_input.sum(axis=1)
 
     def get_output_shape_for(self, input_shape):
         return (input_shape[0], input_shape[-1])
@@ -157,11 +172,11 @@ def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
     x = SpatialDropout1D(0.3)(x)
     x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
     x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
-
-    att = AttLayer()(x)
-
     hidden = concatenate([GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x), ])
-    hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
+
+    att = AttLayer(MAX_LEN)(hidden)
+
+    hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(att)])
     hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
     result = Dense(1, activation='sigmoid')(hidden)
 

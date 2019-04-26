@@ -172,12 +172,12 @@ def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
     x = SpatialDropout1D(0.3)(x)
     x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
     x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
-    hidden = concatenate([GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x), ])
+    hidden=AttLayer(MAX_LEN)(x)
+    # hidden = concatenate([GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x), ])
 
-    att = AttLayer(MAX_LEN)(hidden)
-
-    hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(att)])
     hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
+    hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
+
     result = Dense(1, activation='sigmoid')(hidden)
 
     model = Model(inputs=words, outputs=result)
@@ -229,9 +229,20 @@ def train_model(X, X_test, y, tokenizer, embedding_matrix):
     return prediction
 
 
-def lgb_model(train):
+def lgb_model(train, X_test):
     features = ['severe_toxicity', 'obscene', 'identity_attack', 'insult', 'threat', 'rating', 'funny', 'wow', 'sad',
                 'likes', 'disagree', 'sexual_explicit', 'identity_annotator_count', 'toxicity_annotator_count']
+    X_train = train[features]
+    y_train = train['target']
+    clf = lgb.LGBMClassifier(
+        boosting_type='gbdt', num_leaves=55, reg_alpha=0.0, reg_lambda=1,
+        max_depth=15, n_estimators=6000, objective='binary',
+        subsample=0.8, colsample_bytree=0.8, subsample_freq=1,
+        learning_rate=0.06, min_child_weight=1, random_state=20, n_jobs=4
+    )
+    clf.fit(X_train, y_train)
+    prediction = clf.predict(X_test)
+    return prediction
 
 
 if __name__ == '__main__':

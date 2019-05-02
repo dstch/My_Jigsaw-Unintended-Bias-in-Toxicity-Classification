@@ -119,6 +119,7 @@ def custom_loss(y_true, y_pred):
 
 
 # Attention GRU network
+# https://www.jianshu.com/p/31c0acf94e0e
 class AttLayer(Layer):
     def __init__(self, step_dim, **kwargs):
         self.step_dim = step_dim

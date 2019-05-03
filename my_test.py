@@ -19,11 +19,10 @@ from keras_preprocessing.sequence import pad_sequences
 from keras.layers import Input, Dense, Embedding, SpatialDropout1D, Dropout, add, \
     concatenate, Layer, initializers
 from keras.layers import CuDNNLSTM
-from tensorflow.contrib.keras.api.keras.layers import Bidirectional, GlobalMaxPooling1D, \
-    GlobalAveragePooling1D
-from tensorflow.contrib.keras.api.keras.models import Model
-from tensorflow.contrib.keras.api.keras.losses import binary_crossentropy
-from tensorflow.contrib.keras.api.keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler
+from keras.layers import Bidirectional, GlobalMaxPooling1D, GlobalAveragePooling1D
+from keras.models import Model
+from keras.losses import binary_crossentropy
+from keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from keras import backend as K
 import lightgbm as lgb
@@ -120,6 +119,33 @@ def custom_loss(y_true, y_pred):
 
 # Attention GRU network
 # https://www.jianshu.com/p/31c0acf94e0e
+class AttLayer1(Layer):
+    def __init__(self, **kwargs):
+        self.init = initializers.get('normal')
+        # self.input_spec = [InputSpec(ndim=3)]
+        super(AttLayer1, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        assert len(input_shape) == 3
+        # self.W = self.init((input_shape[-1],1))
+        self.W = self.init((input_shape[-1],))
+        # self.input_spec = [InputSpec(shape=input_shape)]
+        self.trainable_weights = [self.W]
+        super(AttLayer1, self).build(input_shape)  # be sure you call this somewhere!
+
+    def call(self, x, mask=None):
+        eij = K.tanh(K.dot(x, self.W))
+
+        ai = K.exp(eij)
+        weights = ai / K.sum(ai, axis=1).dimshuffle(0, 'x')
+
+        weighted_input = x * weights.dimshuffle(0, 1, 'x')
+        return weighted_input.sum(axis=1)
+
+    def get_output_shape_for(self, input_shape):
+        return (input_shape[0], input_shape[-1])
+
+
 class AttLayer(Layer):
     def __init__(self, step_dim, **kwargs):
         self.step_dim = step_dim
@@ -173,7 +199,9 @@ def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
     x = SpatialDropout1D(0.3)(x)
     x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
     x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
-    hidden=AttLayer(MAX_LEN)(x)
+
+    hidden = AttLayer1()(x)
+    # hidden=AttLayer(MAX_LEN)(x)
     # hidden = concatenate([GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x), ])
 
     hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])

@@ -34,9 +34,9 @@ EMB_PATHS = [
 ]
 EMB_SIZE = 300
 MAX_LEN = 220
-LSTM_UNITS = 128
-DENSE_HIDDEN_UNITS = 768
-FOLD_NUM = 5
+LSTM_UNITS = 256
+DENSE_HIDDEN_UNITS = 512
+FOLD_NUM = 3
 OOF_NAME = 'predicted_target'
 BATCH_SIZE = 512
 PATIENCE = 3
@@ -180,10 +180,6 @@ class AttLayer(Layer):
         a = K.expand_dims(a)
         weighted_input = x * a
         return K.sum(weighted_input, axis=1)
-        # weights = ai / K.sum(ai, axis=1).dimshuffle(0, 'x')
-        #
-        # weighted_input = x * weights.dimshuffle(0, 1, 'x')
-        # return weighted_input.sum(axis=1)
 
     def get_output_shape_for(self, input_shape):
         return input_shape[0], self.features_dim
@@ -271,7 +267,6 @@ def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
     x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
     x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
 
-    # hidden = AttLayer1()(x)
     att = Attention(MAX_LEN)(x)
     hidden = concatenate([att, GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x), ])
 

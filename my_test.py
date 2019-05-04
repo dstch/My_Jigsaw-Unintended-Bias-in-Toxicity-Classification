@@ -34,7 +34,7 @@ EMB_PATHS = [
 EMB_SIZE = 300
 MAX_LEN = 220
 LSTM_UNITS = 128
-DENSE_HIDDEN_UNITS = 256
+DENSE_HIDDEN_UNITS = 768
 FOLD_NUM = 5
 OOF_NAME = 'predicted_target'
 BATCH_SIZE = 512
@@ -200,9 +200,9 @@ def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
     x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
     x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
 
-    hidden = AttLayer1()(x)
-    # hidden=AttLayer(MAX_LEN)(x)
-    # hidden = concatenate([GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x), ])
+    # hidden = AttLayer1()(x)
+    att = AttLayer(MAX_LEN)(x)
+    hidden = concatenate([att, GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x), ])
 
     hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])
     hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])

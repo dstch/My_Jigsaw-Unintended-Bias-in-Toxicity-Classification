@@ -17,7 +17,7 @@ import logging
 from keras_preprocessing.text import Tokenizer
 from keras_preprocessing.sequence import pad_sequences
 from keras.layers import Input, Dense, Embedding, SpatialDropout1D, Dropout, add, \
-    concatenate, Layer, initializers
+    concatenate, Layer
 from keras.layers import CuDNNLSTM
 from keras.layers import Bidirectional, GlobalMaxPooling1D, GlobalAveragePooling1D
 from keras.models import Model
@@ -25,6 +25,7 @@ from keras.losses import binary_crossentropy
 from keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from keras import backend as K
+from keras import initializers, regularizers, constraints
 import lightgbm as lgb
 
 EMB_PATHS = [
@@ -185,7 +186,77 @@ class AttLayer(Layer):
         # return weighted_input.sum(axis=1)
 
     def get_output_shape_for(self, input_shape):
-        return (input_shape[0], input_shape[-1])
+        return input_shape[0], self.features_dim
+
+
+class Attention(Layer):
+    def __init__(self, step_dim,
+                 W_regularizer=None, b_regularizer=None,
+                 W_constraint=None, b_constraint=None,
+                 bias=True, **kwargs):
+        self.supports_masking = True
+        self.init = initializers.get('glorot_uniform')
+
+        self.W_regularizer = regularizers.get(W_regularizer)
+        self.b_regularizer = regularizers.get(b_regularizer)
+
+        self.W_constraint = constraints.get(W_constraint)
+        self.b_constraint = constraints.get(b_constraint)
+
+        self.bias = bias
+        self.step_dim = step_dim
+        self.features_dim = 0
+        super(Attention, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        assert len(input_shape) == 3
+
+        self.W = self.add_weight((input_shape[-1],),
+                                 initializer=self.init,
+                                 name='{}_W'.format(self.name),
+                                 regularizer=self.W_regularizer,
+                                 constraint=self.W_constraint)
+        self.features_dim = input_shape[-1]
+
+        if self.bias:
+            self.b = self.add_weight((input_shape[1],),
+                                     initializer='zero',
+                                     name='{}_b'.format(self.name),
+                                     regularizer=self.b_regularizer,
+                                     constraint=self.b_constraint)
+        else:
+            self.b = None
+
+        self.built = True
+
+    def compute_mask(self, input, input_mask=None):
+        return None
+
+    def call(self, x, mask=None):
+        features_dim = self.features_dim
+        step_dim = self.step_dim
+
+        eij = K.reshape(K.dot(K.reshape(x, (-1, features_dim)),
+                              K.reshape(self.W, (features_dim, 1))), (-1, step_dim))
+
+        if self.bias:
+            eij += self.b
+
+        eij = K.tanh(eij)
+
+        a = K.exp(eij)
+
+        if mask is not None:
+            a *= K.cast(mask, K.floatx())
+
+        a /= K.cast(K.sum(a, axis=1, keepdims=True) + K.epsilon(), K.floatx())
+
+        a = K.expand_dims(a)
+        weighted_input = x * a
+        return K.sum(weighted_input, axis=1)
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0], self.features_dim
 
 
 def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
@@ -201,7 +272,7 @@ def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
     x = Bidirectional(CuDNNLSTM(LSTM_UNITS, return_sequences=True))(x)
 
     # hidden = AttLayer1()(x)
-    att = AttLayer(MAX_LEN)(x)
+    att = Attention(MAX_LEN)(x)
     hidden = concatenate([att, GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x), ])
 
     hidden = add([hidden, Dense(DENSE_HIDDEN_UNITS, activation='relu')(hidden)])

@@ -102,7 +102,9 @@ identity_columns = [
 # Overall
 weights = np.ones((len(x_train),)) / 4
 # Subgroup
-# sum(axis=1)：按列相加，astype：修改类型
+# sum(axis=1)：按行相加，astype：修改类型
+# (train[identity_columns].fillna(0).values >= 0.5).shape=(1804874,9) ：类型是np.array，元素是bool
+# (train[identity_columns].fillna(0).values >= 0.5).sum(axis=1).shape=(1804874,)：类型是np.array，元素是int
 weights += (train[identity_columns].fillna(0).values >= 0.5).sum(axis=1).astype(bool).astype(np.int) / 4
 # Background Positive, Subgroup Negative
 weights += (((train['target'].values >= 0.5).astype(bool).astype(np.int) +

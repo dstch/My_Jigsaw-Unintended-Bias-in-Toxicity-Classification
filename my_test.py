@@ -34,11 +34,11 @@ EMB_PATHS = [
 ]
 EMB_SIZE = 300
 MAX_LEN = 220
-LSTM_UNITS = 256
-DENSE_HIDDEN_UNITS = 512
-FOLD_NUM = 3
+LSTM_UNITS = 128
+DENSE_HIDDEN_UNITS = 768
+FOLD_NUM = 4
 OOF_NAME = 'predicted_target'
-BATCH_SIZE = 512
+BATCH_SIZE = 1024
 PATIENCE = 3
 
 
@@ -279,7 +279,7 @@ def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=["accuracy"])
     # loss如果是列表，则模型的output需要是对应的列表
     # model.compile(loss=[custom_loss, 'binary_crossentropy'], optimizer='adam', metrics=["accuracy"])
-    model.fit(X_train, y_train, batch_size=BATCH_SIZE, epochs=3, validation_data=(X_valid, y_valid),
+    model.fit(X_train, y_train, batch_size=BATCH_SIZE, epochs=2, validation_data=(X_valid, y_valid),
               verbose=1, callbacks=[early_stop])
     # aux_result = Dense(num_aux_targets, activation='sigmoid')(hidden)
     #
@@ -296,6 +296,7 @@ def train_model(X, X_test, y, tokenizer, embedding_matrix):
     test_tokenized = tokenizer.texts_to_sequences(test['comment_text'])
     X_test = pad_sequences(test_tokenized, maxlen=MAX_LEN)
     folds = StratifiedKFold(n_splits=FOLD_NUM, shuffle=True, random_state=11)
+    weights = []
     for fold_n, (train_index, valid_index) in enumerate(folds.split(X, y)):
         print('Fold', fold_n, 'started at', time.ctime())
         X_train, X_valid = X.iloc[train_index], X.iloc[valid_index]
@@ -317,11 +318,12 @@ def train_model(X, X_test, y, tokenizer, embedding_matrix):
         # scores.append(get_final_metric(bias_metrics_df, calculate_overall_auc(valid_df, OOF_NAME)))
 
         prediction += model.predict(X_test, batch_size=1024, verbose=1)
+        weights.append(2 ** fold_n)
 
-    prediction /= FOLD_NUM
+    preds = np.average(prediction, weights=weights, axis=0)
 
     # print('CV mean score: {0:.4f}, std: {1:.4f}.'.format(np.mean(scores), np.std(scores)))
-    return prediction
+    return preds
 
 
 def lgb_model(train, X_test):

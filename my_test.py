@@ -67,9 +67,9 @@ def clean_special_chars(text, punct, mapping):
 
 def load_data():
     logger.info('Load data')
-    train = pd.read_csv('../input/jigsaw-unintended-bias-in-toxicity-classification/train.csv')
-    test = pd.read_csv('../input/jigsaw-unintended-bias-in-toxicity-classification/test.csv')
-    sub = pd.read_csv('../input/jigsaw-unintended-bias-in-toxicity-classification/sample_submission.csv')
+    train = pd.read_csv('train.csv') # ../input/jigsaw-unintended-bias-in-toxicity-classification/
+    test = pd.read_csv('test.csv')
+    sub = pd.read_csv('sample_submission.csv')
 
     train['comment_text'] = train['comment_text'].astype(str)
     test['comment_text'] = test['comment_text'].astype(str)
@@ -326,7 +326,7 @@ def train_model(X, X_test, y, tokenizer, embedding_matrix):
     return preds
 
 
-def lgb_model(train, X_test):
+def lgb_model(train, test):
     features = ['severe_toxicity', 'obscene', 'identity_attack', 'insult', 'threat', 'rating', 'funny', 'wow', 'sad',
                 'likes', 'disagree', 'sexual_explicit', 'identity_annotator_count', 'toxicity_annotator_count']
     X_train = train[features]
@@ -338,31 +338,21 @@ def lgb_model(train, X_test):
         learning_rate=0.06, min_child_weight=1, random_state=20, n_jobs=4
     )
     clf.fit(X_train, y_train)
-    prediction = clf.predict(X_test)
+    prediction = clf.predict(test[features])
     return prediction
 
 
 if __name__ == '__main__':
     train, test, sub = load_data()
-    tokenizer = run_tokenizer(train, test)
-    embedding_matrix = np.concatenate(
-        [build_embedding_matrix(f, tokenizer.word_index) for f in EMB_PATHS], axis=-1)
-    prediction = train_model(train, test, train['target'], tokenizer, embedding_matrix)
+    prediction = lgb_model(train, test)
+    # tokenizer = run_tokenizer(train, test)
+    # embedding_matrix = np.concatenate(
+    #     [build_embedding_matrix(f, tokenizer.word_index) for f in EMB_PATHS], axis=-1)
+    # prediction = train_model(train, test, train['target'], tokenizer, embedding_matrix)
     sub['prediction'] = prediction
     sub.to_csv('submission.csv', index=False)
 """
 ['id        ', 'target    ', 'comment_text', 'severe_toxicity', 'obscene   ', 'identity_attack', 'insult    ',
 'threat    ', 'created_date', 'publication_id', 'article_id', 'rating    ', 'funny     ', 'wow       ', 'sad       ',
 'likes     ', 'disagree  ', 'sexual_explicit', 'identity_annotator_count', 'toxicity_annotator_count']
-"""
-"""
-print("LGB test")
-clf = lgb.LGBMClassifier(
-        boosting_type=‘gbdt‘, num_leaves=55, reg_alpha=0.0, reg_lambda=1,
-        max_depth=15, n_estimators=6000, objective=‘binary‘,
-        subsample=0.8, colsample_bytree=0.8, subsample_freq=1,
-        learning_rate=0.06, min_child_weight=1, random_state=20, n_jobs=4
-    )
-clf.fit(X_train, y_train)
-pre=clf.predict(testdata)
 """

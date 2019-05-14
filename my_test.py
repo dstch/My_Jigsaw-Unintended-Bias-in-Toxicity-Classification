@@ -67,9 +67,9 @@ def clean_special_chars(text, punct, mapping):
 
 def load_data():
     logger.info('Load data')
-    train = pd.read_csv('train.csv') # ../input/jigsaw-unintended-bias-in-toxicity-classification/
-    test = pd.read_csv('test.csv')
-    sub = pd.read_csv('sample_submission.csv')
+    train = pd.read_csv('../input/jigsaw-unintended-bias-in-toxicity-classification/train.csv')
+    test = pd.read_csv('../input/jigsaw-unintended-bias-in-toxicity-classification/test.csv')
+    sub = pd.read_csv('../input/jigsaw-unintended-bias-in-toxicity-classification/sample_submission.csv')
 
     train['comment_text'] = train['comment_text'].astype(str)
     test['comment_text'] = test['comment_text'].astype(str)
@@ -277,10 +277,23 @@ def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
 
     model = Model(inputs=words, outputs=result)
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=["accuracy"])
+
     # loss如果是列表，则模型的output需要是对应的列表
     # model.compile(loss=[custom_loss, 'binary_crossentropy'], optimizer='adam', metrics=["accuracy"])
+
+    # clr
+    def scheduler(epoch):
+        # 每隔100个epoch，学习率减小为原来的1/10
+        if epoch % 100 == 0 and epoch != 0:
+            lr = K.get_value(model.optimizer.lr)
+            K.set_value(model.optimizer.lr, lr * 0.1)
+            print("lr changed to {}".format(lr * 0.1))
+        return K.get_value(model.optimizer.lr)
+
+    reduce_lr = LearningRateScheduler(scheduler)
+
     model.fit(X_train, y_train, batch_size=BATCH_SIZE, epochs=2, validation_data=(X_valid, y_valid),
-              verbose=1, callbacks=[early_stop])
+              verbose=1, callbacks=[early_stop, reduce_lr])
     # aux_result = Dense(num_aux_targets, activation='sigmoid')(hidden)
     #
     # model = Model(inputs=words, outputs=[result, aux_result])

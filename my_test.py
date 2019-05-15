@@ -36,7 +36,7 @@ EMB_SIZE = 300
 MAX_LEN = 220
 LSTM_UNITS = 128
 DENSE_HIDDEN_UNITS = 768
-FOLD_NUM = 4
+FOLD_NUM = 3
 OOF_NAME = 'predicted_target'
 BATCH_SIZE = 1024
 PATIENCE = 3
@@ -331,10 +331,10 @@ def train_model(X, X_test, y, tokenizer, embedding_matrix):
         # scores.append(get_final_metric(bias_metrics_df, calculate_overall_auc(valid_df, OOF_NAME)))
 
         prediction += model.predict(X_test, batch_size=1024, verbose=1)
-        weights.append(2 ** fold_n)
+        # weights.append(2 ** fold_n)
 
-    preds = np.average(prediction, weights=weights, axis=0)
-
+    # preds = np.average(prediction, weights=weights, axis=0)
+    preds = prediction / FOLD_NUM
     # print('CV mean score: {0:.4f}, std: {1:.4f}.'.format(np.mean(scores), np.std(scores)))
     return preds
 
@@ -357,11 +357,11 @@ def lgb_model(train, test):
 
 if __name__ == '__main__':
     train, test, sub = load_data()
-    prediction = lgb_model(train, test)
-    # tokenizer = run_tokenizer(train, test)
-    # embedding_matrix = np.concatenate(
-    #     [build_embedding_matrix(f, tokenizer.word_index) for f in EMB_PATHS], axis=-1)
-    # prediction = train_model(train, test, train['target'], tokenizer, embedding_matrix)
+    # prediction = lgb_model(train, test)
+    tokenizer = run_tokenizer(train, test)
+    embedding_matrix = np.concatenate(
+        [build_embedding_matrix(f, tokenizer.word_index) for f in EMB_PATHS], axis=-1)
+    prediction = train_model(train, test, train['target'], tokenizer, embedding_matrix)
     sub['prediction'] = prediction
     sub.to_csv('submission.csv', index=False)
 """

@@ -292,8 +292,8 @@ def build_model(embedding_matrix, X_train, y_train, X_valid, y_valid):
 
     reduce_lr = LearningRateScheduler(scheduler)
 
-    model.fit(X_train, y_train, batch_size=BATCH_SIZE, epochs=2, validation_data=(X_valid, y_valid),
-              verbose=1, callbacks=[early_stop, reduce_lr])
+    model.fit(X_train, y_train, batch_size=BATCH_SIZE, epochs=3, validation_data=(X_valid, y_valid),
+              verbose=1, callbacks=[early_stop])  # reduce_lr add in callbacks's list
     # aux_result = Dense(num_aux_targets, activation='sigmoid')(hidden)
     #
     # model = Model(inputs=words, outputs=[result, aux_result])

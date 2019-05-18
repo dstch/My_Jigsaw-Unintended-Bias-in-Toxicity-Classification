@@ -35,7 +35,9 @@ EMB_PATHS = [
 EMB_SIZE = 300
 MAX_LEN = 220
 LSTM_UNITS = 128
-DENSE_HIDDEN_UNITS = 768
+DENSE_HIDDEN_UNITS = 1024
+# DENSE_HIDDEN_UNITS=256*4,即在concatenate([att, GlobalMaxPooling1D()(x), GlobalAveragePooling1D()(x), cap])中，
+# 四个tensor的shape都是256
 FOLD_NUM = 3
 OOF_NAME = 'predicted_target'
 BATCH_SIZE = 1024
